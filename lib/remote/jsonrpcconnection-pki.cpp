@@ -53,6 +53,7 @@ Value RequestCertificateHandler(const MessageOrigin::Ptr& origin, const Dictiona
 		X509 *rawCert = PEM_read_bio_X509_AUX(bio, NULL, NULL, NULL);
 
 		if (!rawCert) {
+			result->Set("status_code", 1);
 			result->Set("error", "The 'cert_request' attribute does not contain a valid X509 certificate");
 			return result;
 		}
@@ -85,6 +86,7 @@ Value RequestCertificateHandler(const MessageOrigin::Ptr& origin, const Dictiona
 		String realTicket = PBKDF2_SHA1(origin->FromClient->GetIdentity(), salt, 50000);
 
 		if (ticket != realTicket) {
+			result->Set("status_code", 1);
 			result->Set("error", "Invalid ticket.");
 			return result;
 		}
@@ -95,6 +97,8 @@ Value RequestCertificateHandler(const MessageOrigin::Ptr& origin, const Dictiona
 
 	newcert = CreateCertIcingaCA(pubkey, subject);
 	result->Set("cert", CertificateToString(newcert));
+
+	result->Set("status_code", 0);
 
 	return result;
 
@@ -107,6 +111,7 @@ delayed_request:
 	unsigned char digest[EVP_MAX_MD_SIZE];
 
 	if (!X509_digest(cert.get(), EVP_sha256(), digest, &n)) {
+		result->Set("status_code", 1);
 		result->Set("error", "Could not calculate fingerprint for the X509 certificate.");
 		return result;
 	}
@@ -123,8 +128,8 @@ delayed_request:
 
 	Utility::SaveJsonFile(requestPath, 0600, request);
 
-	result->Set("status_code", 17);
-	result->Set("status", "Certificate request has been saved.");
+	result->Set("status_code", 2);
+	result->Set("error", "Certificate request is pending. Waiting for approval from the parent Icinga instance.");
 	return result;
 }
 
