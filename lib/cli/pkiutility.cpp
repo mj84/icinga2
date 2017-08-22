@@ -279,6 +279,22 @@ int PkiUtility::RequestCertificate(const String& host, const String& port, const
 		}
 	}
 
+	try {
+		StringToCertificate(result->Get("cert"));
+	} catch (const std::exception& ex) {
+		Log(LogCritical, "cli")
+		    << "Could not write certificate file: " << DiagnosticInformation(ex, false);
+		return 1;
+	}
+
+	try {
+		StringToCertificate(result->Get("ca"));
+	} catch (const std::exception& ex) {
+		Log(LogCritical, "cli")
+		    << "Could not write CA file: " << DiagnosticInformation(ex, false);
+		return 1;
+	}
+
 	std::ofstream fpcert;
 	fpcert.open(certfile.CStr());
 	fpcert << result->Get("cert");

@@ -46,28 +46,43 @@ Value RequestCertificateHandler(const MessageOrigin::Ptr& origin, const Dictiona
 
 	if (certText.IsEmpty())
 		cert = origin->FromClient->GetStream()->GetPeerCertificate();
-	else {
-		BIO *bio = BIO_new(BIO_s_mem());
-		BIO_write(bio, (const void *)certText.CStr(), certText.GetLength());
+	else
+		cert = StringToCertificate(certText);
 
-		X509 *rawCert = PEM_read_bio_X509_AUX(bio, NULL, NULL, NULL);
+	unsigned int n;
+	unsigned char digest[EVP_MAX_MD_SIZE];
 
-		if (!rawCert) {
-			result->Set("status_code", 1);
-			result->Set("error", "The 'cert_request' attribute does not contain a valid X509 certificate");
-			return result;
-		}
-
-		BIO_free(bio);
-
-		cert = boost::shared_ptr<X509>(rawCert, X509_free);
+	if (!X509_digest(cert.get(), EVP_sha256(), digest, &n)) {
+		result->Set("status_code", 1);
+		result->Set("error", "Could not calculate fingerprint for the X509 certificate.");
+		return result;
 	}
+
+	char certFingerprint[EVP_MAX_MD_SIZE*2+1];
+	for (unsigned int i = 0; i < n; i++)
+		sprintf(certFingerprint + 2 * i, "%02x", digest[i]);
+
+	String requestDir = Application::GetLocalStateDir() + "/lib/icinga2/pki-requests";
+	String requestPath = requestDir + "/" + certFingerprint + ".json";
 
 	ApiListener::Ptr listener = ApiListener::GetInstance();
 
 	String cacertfile = listener->GetCaPath();
 	boost::shared_ptr<X509> cacert = GetX509Certificate(cacertfile);
 	result->Set("ca", CertificateToString(cacert));
+
+	if (Utility::PathExists(requestPath)) {
+		Dictionary::Ptr request = Utility::LoadJsonFile(requestPath);
+
+		String certResponse = request->Get("cert_response");
+
+		if (!certResponse.IsEmpty()) {
+			result->Set("cert", certResponse);
+			result->Set("status_code", 0);
+
+			return result;
+		}
+	}
 
 	boost::shared_ptr<X509> newcert;
 	EVP_PKEY *pubkey;
@@ -103,24 +118,7 @@ Value RequestCertificateHandler(const MessageOrigin::Ptr& origin, const Dictiona
 	return result;
 
 delayed_request:
-	String requestDir = Application::GetLocalStateDir() + "/lib/icinga2/pki-requests";
-
 	Utility::MkDirP(requestDir, 0700);
-
-	unsigned int n;
-	unsigned char digest[EVP_MAX_MD_SIZE];
-
-	if (!X509_digest(cert.get(), EVP_sha256(), digest, &n)) {
-		result->Set("status_code", 1);
-		result->Set("error", "Could not calculate fingerprint for the X509 certificate.");
-		return result;
-	}
-
-	char output[EVP_MAX_MD_SIZE*2+1];
-	for (unsigned int i = 0; i < n; i++)
-		sprintf(output + 2 * i, "%02x", digest[i]);
-
-	String requestPath = requestDir + "/" + output + ".json";
 
 	Dictionary::Ptr request = new Dictionary();
 	request->Set("cert_request", CertificateToString(cert));
