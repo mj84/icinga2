@@ -258,6 +258,30 @@ int PkiUtility::RequestCertificate(const String& host, const String& port, const
 
 	Dictionary::Ptr result = response->Get("result");
 
+	if (result->Contains("ca")) {
+		try {
+			StringToCertificate(result->Get("ca"));
+		} catch (const std::exception& ex) {
+			Log(LogCritical, "cli")
+			    << "Could not write CA file: " << DiagnosticInformation(ex, false);
+			return 1;
+		}
+
+		Log(LogInformation, "cli")
+		    << "Writing CA certificate to file '" << cafile << "'.";
+
+		std::ofstream fpca;
+		fpca.open(cafile.CStr());
+		fpca << result->Get("ca");
+		fpca.close();
+
+		if (fpca.fail()) {
+			Log(LogCritical, "cli")
+			    << "Could not open CA certificate file '" << cafile << "' for writing.";
+			return 1;
+		}
+	}
+
 	if (result->Contains("error")) {
 		LogSeverity severity;
 
@@ -287,13 +311,8 @@ int PkiUtility::RequestCertificate(const String& host, const String& port, const
 		return 1;
 	}
 
-	try {
-		StringToCertificate(result->Get("ca"));
-	} catch (const std::exception& ex) {
-		Log(LogCritical, "cli")
-		    << "Could not write CA file: " << DiagnosticInformation(ex, false);
-		return 1;
-	}
+	Log(LogInformation, "cli")
+	    << "Writing signed certificate to file '" << certfile << "'.";
 
 	std::ofstream fpcert;
 	fpcert.open(certfile.CStr());
@@ -305,23 +324,6 @@ int PkiUtility::RequestCertificate(const String& host, const String& port, const
 		    << "Could not write certificate to file '" << certfile << "'.";
 		return 1;
 	}
-
-	Log(LogInformation, "cli")
-	    << "Writing signed certificate to file '" << certfile << "'.";
-
-	std::ofstream fpca;
-	fpca.open(cafile.CStr());
-	fpca << result->Get("ca");
-	fpca.close();
-
-	if (fpca.fail()) {
-		Log(LogCritical, "cli")
-		    << "Could not open CA certificate file '" << cafile << "' for writing.";
-		return 1;
-	}
-
-	Log(LogInformation, "cli")
-	    << "Writing CA certificate to file '" << cafile << "'.";
 
 	return 0;
 }
